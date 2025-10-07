@@ -1,0 +1,53 @@
+import _thread
+import utime
+from machine import UART
+from queue import Queue
+
+class MD02_UART(object):
+    def __init__(self, no=UART.UART2, baud=9600, data_bits=8, parity=0, stop_bits=1, flow_control=0):
+        self.uart = UART(no, baud, data_bits, parity, stop_bits, flow_control)
+        self._queue = Queue(5)
+        _thread.start_new_thread(self.handler_thread, ())
+        self.uart.set_callback(self.callback)
+
+        # MD02 Sensor Query Command
+        self.query_command_md02 = bytearray([0x01, 0x04, 0x00, 0x01, 0x00, 0x02, 0x20, 0x0B])
+
+    def callback(self, para):
+        if para[0] == 0:
+            self._queue.put(para[2])  # Received data length
+
+    def send_query(self):
+        self.uart.write(self.query_command_md02)
+
+    def parse_md02_response(self, response):
+        if len(response) < 6:
+            print("MD02 Sensor: Received incomplete response")
+            return
+
+        if response[0] == 0x01 and response[1] == 0x04:
+            humidity = (response[5] << 8) | response[6]
+            temperature = (response[3] << 8) | response[4]
+
+            humidity_value = humidity / 100.0
+            temperature_value = temperature / 100.0
+            print("MD02 - Temperature: {:.1f}°C, Humidity: {:.1f}%".format(temperature_value, humidity_value))
+        else:
+            print("MD02: Invalid frame header received")
+
+    def handler_thread(self):
+        while True:
+            recv_len = self._queue.get()
+            response = self.uart.read(recv_len)
+            if response:
+                if response[0] == 0x01 and response[1] == 0x04 and len(response) >= 7:
+                    self.parse_md02_response(response[:7])
+                else:
+                    print("MD02: Unknown or invalid response")
+
+if __name__ == "__main__":
+    md02 = MD02_UART()
+    
+    while True:
+        md02.send_query()  # Query MD02 sensor
+        utime.sleep(2)

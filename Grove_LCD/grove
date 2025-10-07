@@ -1,0 +1,13 @@
+from machine import I2C
+import utime
+from usr.grove_lcd_i2c import GroveRGBLCD
+
+i2c = I2C(0, True)  # QuecPython style
+
+lcd = GroveRGBLCD(i2c)
+
+lcd.clear()
+lcd.set_cursor(0, 0)
+lcd.write_string("Hello EC200U")
+lcd.set_cursor(0, 1)
+lcd.write_string("Addr 0x3E OK")

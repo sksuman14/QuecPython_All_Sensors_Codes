@@ -1,0 +1,61 @@
+import utime as time
+from machine import I2C
+
+WHO_AM_I = 0x0F
+LPS22DF_ID = 0xB4
+
+CTRL_REG1 = 0x10
+CTRL_REG2 = 0x11
+
+PRESS_OUT_XL = 0x28  # 3 bytes: XL, L, H
+TEMP_OUT_L = 0x2B    # 2 bytes: L, H
+
+
+class LPS22DF:
+    def __init__(self, i2c_bus, address=0x5C):
+        if i2c_bus is None:
+            raise ValueError("I2C bus required for LPS22DF")
+        
+        self._i2c = i2c_bus
+        self._address = address
+        self._buf = bytearray(3)  # Max needed
+
+        # Check sensor presence
+        if self._read_reg(WHO_AM_I, 1)[0] != LPS22DF_ID:
+            raise RuntimeError("LPS22DF not found at address 0x%02X" % address)
+
+        # Init config
+        self._write_reg(CTRL_REG1, [0x41])
+    time.sleep_ms(100)  # Reset off
+
+    def _write_reg(self, reg, data):
+        self._i2c.write(self._address, bytes([reg]), 1, bytearray(data), len(data))
+
+    def _read_reg(self, reg, length):
+        buf = bytearray(length)
+        self._i2c.read(self._address, bytes([reg]), 1, buf, length, 0)
+        return buf
+
+
+    def get_pressure(self):
+        data = self._read_reg(PRESS_OUT_XL, 3)
+        print("Raw Pressure Bytes:", list(data))  # ← DEBUG
+        raw = (data[2] << 16) | (data[1] << 8) | data[0]
+        raw <<= 8
+        pressure = raw / 1048576.0
+        return round(pressure, 2)
+
+    def get_temperature(self):
+        data = self._read_reg(TEMP_OUT_L, 2)
+        print("Raw Temp Bytes:", list(data))  # ← DEBUG
+        raw = (data[1] << 8) | data[0]
+        if raw & 0x8000:
+            raw -= 65536
+        temp = raw / 100.0
+        return round(temp, 2)
+
+
+    def reset(self):
+        ctrl2 = self._read_reg(CTRL_REG2, 1)[0]
+        self._write_reg(CTRL_REG2, [ctrl2 | 0x04])
+        time.sleep_ms(10)

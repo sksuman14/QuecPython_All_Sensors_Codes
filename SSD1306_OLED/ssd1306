@@ -1,0 +1,225 @@
+import utime as time
+from math import sqrt
+import usr.LCDPublic
+from usr.LCDPublic import ascii_8x16_dict
+
+# SSD1306 command constants
+SET_CONTRAST = 0x81
+SET_ENTIRE_ON = 0xA4
+SET_NORM_INV = 0xA6
+SET_DISP = 0xAE
+SET_MEM_ADDR = 0x20
+SET_COL_ADDR = 0x21
+SET_PAGE_ADDR = 0x22
+SET_DISP_START_LINE = 0x40
+SET_SEG_REMAP = 0xA0
+SET_MUX_RATIO = 0xA8
+SET_COM_OUT_DIR = 0xC0
+SET_DISP_OFFSET = 0xD3
+SET_COM_PIN_CFG = 0xDA
+SET_DISP_CLK_DIV = 0xD5
+SET_PRECHARGE = 0xD9
+SET_VCOM_DESEL = 0xDB
+SET_CHARGE_PUMP = 0x8D
+
+BLACK = 0
+WHITE = 1
+
+class SSD1306_Quec:
+    def __init__(self, i2c, width, height, address=0x3C, external_vcc=False):
+        self._i2c = i2c
+        self._address = address
+        self.width = width
+        self.height = height
+        self.external_vcc = external_vcc
+        self.pages = self.height // 8
+        self.buffer = bytearray(self.width * self.pages)
+        self.temp = bytearray(2)
+        self.write_list = [b'\x40', None]
+        self._init_display()
+
+    def _write_cmd(self, cmd):
+        self.temp[0] = 0x80
+        self.temp[1] = cmd
+        result = self._i2c.write(self._address, b'', 0, self.temp, 2)
+
+    def _write_data(self, buf):
+        # Create a single bytearray with 0x40 prefix + data buffer
+        prefix = b'\x40'
+        payload = prefix + buf
+        result = self._i2c.write(self._address, b'', 0, payload, len(payload))
+
+    def _init_display(self):
+        for cmd in (
+            SET_DISP | 0x00,
+            SET_MEM_ADDR, 0x00,
+            SET_DISP_START_LINE | 0x00,
+            SET_SEG_REMAP | 0x01,
+            SET_MUX_RATIO, self.height - 1,
+            SET_COM_OUT_DIR | 0x08,
+            SET_DISP_OFFSET, 0x00,
+            SET_COM_PIN_CFG, 0x02 if self.width > 2 * self.height else 0x12,
+            SET_DISP_CLK_DIV, 0x80,
+            SET_PRECHARGE, 0x22 if self.external_vcc else 0xF1,
+            SET_VCOM_DESEL, 0x30,
+            SET_CONTRAST, 0xFF,
+            SET_ENTIRE_ON,
+            SET_NORM_INV,
+            SET_CHARGE_PUMP, 0x10 if self.external_vcc else 0x14,
+            SET_DISP | 0x01,
+        ):
+            self._write_cmd(cmd)
+        self.fill(0)
+        self.show()
+
+    def poweron(self):
+        self._write_cmd(SET_DISP | 0x01)
+
+    def poweroff(self):
+        self._write_cmd(SET_DISP | 0x00)
+
+    def contrast(self, val):
+        self._write_cmd(SET_CONTRAST)
+        self._write_cmd(val)
+
+    def invert(self, inv):
+        self._write_cmd(SET_NORM_INV | (inv & 1))
+
+    def fill(self, color=0):
+        val = 0xFF if color else 0x00
+        for i in range(len(self.buffer)):
+            self.buffer[i] = val
+
+    def pixel(self, x, y, color):
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return
+        page = y >> 3
+        shift = y & 0x07
+        index = x + self.width * page
+        if color:
+            self.buffer[index] |= (1 << shift)
+        else:
+            self.buffer[index] &= ~(1 << shift)
+
+    def show(self):
+        x0 = 0
+        x1 = self.width - 1
+        if self.width == 64:
+            x0 += 32
+            x1 += 32
+        self._write_cmd(SET_COL_ADDR)
+        self._write_cmd(x0)
+        self._write_cmd(x1)
+        self._write_cmd(SET_PAGE_ADDR)
+        self._write_cmd(0)
+        self._write_cmd(self.pages - 1)
+        self._write_data(self.buffer)
+
+    def image(self, x0, y0, width, height, img_data):
+        # Display a monochrome (1-bit) image starting at (x0, y0).
+        # img_data is a bytes/bytearray object with 1 bit per pixel.
+        # width must be multiple of 8 (horizontal bits per row)
+        # height must be multiple of 8 (since SSD1306 is page based)
+        
+        # Sanity checks
+        if width % 8 != 0 or y0 % 8 != 0:
+            return
+
+        pages = height // 8
+        cols = width
+
+        self._write_cmd(SET_COL_ADDR)
+        self._write_cmd(x0)
+        self._write_cmd(x0 + cols - 1)
+        self._write_cmd(SET_PAGE_ADDR)
+        self._write_cmd(y0 // 8)
+        self._write_cmd((y0 // 8) + pages - 1)
+
+        self._write_data(img_data)
+
+    def draw_char_8x16(self, x, y, char, color=1, bg=0):
+        # Draw a single character at (x, y) using 8x16 font, 1-bit per pixel.
+        font = usr.LCDPublic.ascii_8x16_dict.get(char)
+        if not font or len(font) != 16:
+            return
+
+        # SSD1306 uses page-based memory: every byte = vertical column of 8 pixels
+        # Since height = 16, we need 2 pages
+        img_data = bytearray(8 * 2)  # 8 cols × 2 pages
+
+        for col in range(8):
+            byte_upper = 0x00  # bits for top page
+            byte_lower = 0x00  # bits for bottom page
+            for row in range(8):
+                pixel_on = (font[row] >> (7 - col)) & 0x01
+                if pixel_on:
+                    byte_upper |= (1 << row)
+            for row in range(8, 16):
+                pixel_on = (font[row] >> (7 - col)) & 0x01
+                if pixel_on:
+                    byte_lower |= (1 << (row - 8))
+
+            img_data[col] = byte_upper
+            img_data[8 + col] = byte_lower
+
+        self.image(x, y, 8, 16, img_data)
+
+    def line(self, x0, y0, x1, y1, color=1):
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy
+        while True:
+            self.pixel(x0, y0, color)
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+
+    def rect(self, x, y, w, h, color=1):
+        self.line(x, y, x + w - 1, y, color)
+        self.line(x, y, x, y + h - 1, color)
+        self.line(x + w - 1, y, x + w - 1, y + h - 1, color)
+        self.line(x, y + h - 1, x + w - 1, y + h - 1, color)
+
+    def fill_rect(self, x, y, w, h, color=1):
+        for i in range(x, x + w):
+            for j in range(y, y + h):
+                self.pixel(i, j, color)
+
+    def circle(self, x0, y0, r, color=1):
+        f = 1 - r
+        dx = 1
+        dy = -2 * r
+        x = 0
+        y = r
+        self.pixel(x0, y0 + r, color)
+        self.pixel(x0, y0 - r, color)
+        self.pixel(x0 + r, y0, color)
+        self.pixel(x0 - r, y0, color)
+        while x < y:
+            if f >= 0:
+                y -= 1
+                dy += 2
+                f += dy
+            x += 1
+            dx += 2
+            f += dx
+            self.pixel(x0 + x, y0 + y, color)
+            self.pixel(x0 - x, y0 + y, color)
+            self.pixel(x0 + x, y0 - y, color)
+            self.pixel(x0 - x, y0 - y, color)
+            self.pixel(x0 + y, y0 + x, color)
+            self.pixel(x0 - y, y0 + x, color)
+            self.pixel(x0 + y, y0 - x, color)
+            self.pixel(x0 - y, y0 - x, color)
+
+# Clamp function for rect math
+def clamp(val, min_val, max_val):
+    return max(min_val, min(val, max_val))

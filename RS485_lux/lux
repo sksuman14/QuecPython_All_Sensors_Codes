@@ -1,0 +1,49 @@
+import _thread
+import utime
+from machine import UART
+from queue import Queue
+
+class Lux_UART(object):
+    def __init__(self, no=UART.UART2, baud=9600, data_bits=8, parity=0, stop_bits=1, flow_control=0):
+        self.uart = UART(no, baud, data_bits, parity, stop_bits, flow_control)
+        self._queue = Queue(5)
+        _thread.start_new_thread(self.handler_thread, ())
+        self.uart.set_callback(self.callback)
+
+        # Lux Sensor Query Command
+        self.query_command = bytearray([0xA5, 0x09, 0xAE])
+
+    def callback(self, para):
+        if para[0] == 0:
+            self._queue.put(para[2])  # received data length
+
+    def send_query(self):
+        self.uart.write(self.query_command)
+        print("Lux query sent")
+
+    def parse_lux_response(self, response):
+        """Parse lux sensor response frame"""
+        if len(response) == 9 and response[0] == 0x5A and response[1] == 0x5A:
+            Lux_raw = (response[4] << 24) | (response[5] << 16) | (response[6] << 8) | response[7]
+            lux = Lux_raw / 100.0
+            print("[✔] Parsed UART: LUX = {:.1f}".format(lux))
+            return lux
+        else:
+            print("Lux: Invalid or incomplete response")
+            return None
+
+    def handler_thread(self):
+        while True:
+            recv_len = self._queue.get()
+            response = self.uart.read(recv_len)
+            if response:
+                lux = self.parse_lux_response(response)
+                if lux is not None:
+                    pass  # here you can store lux to global state if needed
+
+if __name__ == "__main__":
+    lux_sensor = Lux_UART()
+    
+    while True:
+        lux_sensor.send_query()  # Query Lux sensor
+        utime.sleep(2)

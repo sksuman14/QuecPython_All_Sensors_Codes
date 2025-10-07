@@ -1,0 +1,40 @@
+from machine import I2C
+import utime as time
+from usr.ssd1306 import SSD1306_Quec
+from usr.LCDPublic import ascii_8x16_dict
+
+def make_font_dict():
+    return {
+        "Width": 8,
+        "Height": 16,
+        "Data": ascii_8x16_dict
+    }
+
+def main():
+    print("[DEBUG] Running SSD1306 main()")
+
+    # Setup I2C on default EC200U pins (adjust if needed)
+    i2c_dev = I2C(I2C.I2C0, I2C.FAST_MODE)
+    print("[DEBUG] I2C initialized")
+
+    oled = SSD1306_Quec(i2c_dev, 128, 64)
+    oled.fill(0)
+
+    # Draw each character using draw_char_8x16
+    msg = "Hello, Quec!"
+    x, y = 0, 0
+    for ch in msg:
+        oled.draw_char_8x16(x, y, ch, color=1)
+        x += 8
+        if x + 8 > oled.width:
+            x = 0
+            y += 16
+            if y + 16 > oled.height:
+                break
+
+    # Draw additional primitives
+    
+    print("[DEBUG] draw_char demo complete.")
+
+if __name__ == "__main__":
+    main()

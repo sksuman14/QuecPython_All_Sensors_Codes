@@ -1,0 +1,114 @@
+# Copyright (c) Quectel Wireless Solution, Co., Ltd.All Rights Reserved.
+#  
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#  
+#     http://www.apache.org/licenses/LICENSE-2.0
+#  
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+'''
+File: aht20_oled_display.py
+Project: Combined AHT20 sensor with SSD1306 OLED display
+Description: Reads temperature and humidity from AHT20 and displays on OLED
+'''
+
+from machine import I2C
+import utime as time
+from usr.aht20 import Aht20
+from usr.ssd1306 import SSD1306_Quec
+from usr.LCDPublic import ascii_8x16_dict
+
+def make_font_dict():
+    return {
+        "Width": 8,
+        "Height": 16,
+        "Data": ascii_8x16_dict
+    }
+
+def display_text(oled, text, x, y):
+    """Display text on OLED at specified position"""
+    for i, ch in enumerate(text):
+        char_x = x + (i * 8)
+        if char_x + 8 > oled.width:
+            break
+        oled.draw_char_8x16(char_x, y, ch, color=1)
+        print("[DEBUG] Drawing char '{}' at ({}, {})".format(ch, char_x, y))
+
+def main():
+    print("[DEBUG] Starting AHT20 + OLED display")
+    
+    # Initialize I2C
+    i2c_dev = I2C(I2C.I2C0, I2C.FAST_MODE)
+    print("[DEBUG] I2C initialized")
+    
+    # Initialize AHT20 sensor
+    aht_dev = Aht20()
+    print("[DEBUG] AHT20 initialized")
+    
+    # Initialize OLED display
+    oled = SSD1306_Quec(i2c_dev, 128, 64)
+    print("[DEBUG] OLED initialized")
+    
+    # Main loop - read sensor and alternate display pages
+    for i in range(100):  # Run for 100 iterations
+        try:
+            # Read temperature and humidity
+            hum, tem = aht_dev.read()
+            
+            # CONFIRMATION: Print raw sensor data
+            print("=== SENSOR DATA CONFIRMATION ===")
+            print("Raw Temperature: {:.2f}°C".format(tem))
+            print("Raw Humidity: {:.2f}%".format(hum))
+            print("================================")
+            
+            # Print to console
+            print("Reading {}: Humidity {:.2f}%, Temperature {:.2f}°C".format(i+1, hum, tem))
+            
+            # === TEMPERATURE PAGE ===
+            # Clear display
+            oled.fill(0)
+            
+            # Display temperature page
+            temp_value = "{:.1f}C".format(tem)
+            print("[DEBUG] Temperature value: {}".format(temp_value))
+            
+            display_text(oled, "TEMP:", 0, 0)
+            display_text(oled, temp_value, 0, 16)
+            time.sleep(3)
+            
+            # Update display
+            oled.show()
+            print("[DEBUG] Temperature page displayed")
+            
+            
+            # === HUMIDITY PAGE ===
+            # Clear display
+            oled.fill(0)
+            
+            # Display humidity page
+            hum_value = "{:.1f}%".format(hum)
+            print("[DEBUG] Humidity value: {}".format(hum_value))
+            
+            display_text(oled, "HUM:", 0, 0)
+            display_text(oled, hum_value, 0, 16)
+            time.sleep(3)  # Changed from 20 to 16
+            
+            # Update display
+            oled.show()
+            print("[DEBUG] Humidity page displayed")
+            
+            
+        except Exception as e:
+            print("[ERROR] Failed to read sensor or update display:", e)
+            time.sleep(1)
+    
+    print("[DEBUG] Program completed")
+
+if __name__ == "__main__":
+    main()

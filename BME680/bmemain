@@ -1,0 +1,29 @@
+from machine import I2C, Pin
+import time
+from usr.bmedriver import BME680  # Your driver
+
+# Initialize I2C
+i2c = I2C(I2C.I2C0, I2C.FAST_MODE)
+
+# Initialize sensor
+sensor = BME680(i2c)
+sensor.soft_reset()
+time.sleep_ms(50)
+
+# Configure oversampling and filters
+sensor.set_humidity_oversample(2)
+sensor.set_pressure_oversample(3)
+sensor.set_temperature_oversample(4)
+sensor.set_filter(2)
+data_ready = sensor.get_sensor_data()
+
+# Print results
+if not data_ready:
+    print("[ERROR] Sensor data not ready after retries.")
+else:
+    try:
+        print("Temperature: {:.2f} °C".format(sensor.data.temperature))
+        print("Pressure: {:.2f} hPa".format(sensor.data.pressure))
+        print("Humidity: {:.2f} %".format(sensor.data.humidity))
+    except Exception as e:
+        print("[ERROR] Failed to read sensor values:", e)

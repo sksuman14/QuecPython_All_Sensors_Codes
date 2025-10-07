@@ -1,0 +1,11 @@
+from machine import I2C
+from usr.sht4x import SHT4X
+
+i2c = I2C(I2C.I2C0, I2C.FAST_MODE)
+sht = SHT4X(i2c)
+
+temp = sht.get_temperature()
+hum = sht.get_humidity()
+
+print("Temp:", temp, "°C")
+print("Humidity:", hum, "%RH")

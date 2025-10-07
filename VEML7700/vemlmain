@@ -1,0 +1,10 @@
+from machine import I2C
+import utime
+from usr.veml_7700_driver import VEML7700
+
+i2c_dev = I2C(I2C.I2C0, I2C.FAST_MODE)
+veml = VEML7700(i2c_dev)
+
+while True:
+    print("Lux:", veml.lux())
+    utime.sleep_ms(1000)

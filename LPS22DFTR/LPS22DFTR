@@ -1,0 +1,16 @@
+from machine import I2C
+import time
+from usr.lps22df import LPS22DF
+
+i2c = I2C(I2C.I2C0, I2C.FAST_MODE)
+sensor = LPS22DF(i2c)
+
+while True:
+    try:
+        temp = sensor.get_temperature()
+        press = sensor.get_pressure()
+        print("Temp:", temp, "°C", "| Pressure:", press, "hPa")
+        time.sleep(2)
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)

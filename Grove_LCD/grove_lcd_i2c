@@ -1,0 +1,47 @@
+from machine import I2C
+import utime
+
+class GroveRGBLCD:
+    def __init__(self, i2c_bus, lcd_address=0x3E):
+        self._i2c = i2c_bus
+        self._address = lcd_address
+
+        self._command(0x38)  # Function set
+        self._command(0x39)  # Function set (extended)
+        self._command(0x14)  # Internal osc freq
+        self._command(0x70)  # Contrast set
+        self._command(0x56)  # Power/icon/contrast control
+        self._command(0x6C)  # Follower control
+        utime.sleep_ms(200)
+        self._command(0x38)  # Function set
+        self._command(0x0C)  # Display ON
+        self._command(0x01)  # Clear display
+        utime.sleep_ms(2)
+
+    def _command(self, cmd):
+        buf = bytearray([0x80, cmd])  # 0x80 = Control byte for command
+        res = self._i2c.write(self._address, b'', 0, buf, 2)
+        if res != 0:
+            raise RuntimeError("LCD command write failed")
+
+    def _write_char(self, char):
+        buf = bytearray([0x40, ord(char)])  # 0x40 = Control byte for data
+        res = self._i2c.write(self._address, b'', 0, buf, 2)
+        if res != 0:
+            raise RuntimeError("LCD data write failed")
+
+    def write_string(self, text):
+        for c in text:
+            self._write_char(c)
+
+    def set_cursor(self, col, row):
+        addr = 0x80 + col + (0x40 if row == 1 else 0)
+        self._command(addr)
+
+    def clear(self):
+        self._command(0x01)
+        utime.sleep_ms(2)
+
+    def home(self):
+        self._command(0x02)
+        utime.sleep_ms(2)
